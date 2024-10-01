@@ -41,7 +41,8 @@ public struct ImageVariationParameters: Encodable {
       case size
       case user
    }
-   
+
+   #if canImport(UIKit) || canImport(AppKit)
    public init(
       image: PlatformImage,
       model: Dalle? = nil,
@@ -64,6 +65,26 @@ public struct ImageVariationParameters: Encodable {
       }
       
       self.image = imageData!
+      self.n = numberOfImages
+      self.model = model?.model
+      self.size = model?.size
+      self.responseFormat = responseFormat?.rawValue
+      self.user = user
+   }
+   #endif
+
+   public init(
+      image: Data,
+      model: Dalle? = nil,
+      numberOfImages: Int? = nil,
+      responseFormat: ImageResponseFormat? = nil,
+      user: String? = nil)
+   {
+      if let model, model.model != Model.dalle2.value {
+         assertionFailure("Only dall-e-2 is supported at this time [https://platform.openai.com/docs/api-reference/images/createEdit]")
+      }
+
+      self.image = image
       self.n = numberOfImages
       self.model = model?.model
       self.size = model?.size

@@ -50,6 +50,7 @@ public struct ImageEditParameters: Encodable {
       case user
    }
    
+   #if canImport(UIKit) || canImport(AppKit)
    public init(
       image: PlatformImage,
       model: Dalle? = nil,
@@ -84,7 +85,32 @@ public struct ImageEditParameters: Encodable {
       self.responseFormat = responseFormat?.rawValue
       self.user = user
    }
+   #endif
+
+   public init(
+      image: Data,
+      model: Dalle? = nil,
+      mask: Data? = nil,
+      prompt: String,
+      numberOfImages: Int? = nil,
+      responseFormat: ImageResponseFormat? = nil,
+      user: String? = nil)
+   {
+      if mask == nil {
+         assertionFailure("Failed to get mask data")
+      }
+
+      self.image = image
+      self.model = model?.model
+      self.mask = mask
+      self.prompt = prompt
+      self.n = numberOfImages
+      self.size = model?.size
+      self.responseFormat = responseFormat?.rawValue
+      self.user = user
+   }
 }
+
 
 // MARK: MultipartFormDataParameters
 
