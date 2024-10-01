@@ -5,7 +5,9 @@
 //  Created by James Rochabrun on 10/11/23.
 //
 
+import AsyncHTTPClient
 import Foundation
+import NIOFoundationCompat
 
 // MARK: HTTPMethod
 
@@ -47,25 +49,26 @@ extension Endpoint {
       queryItems: [URLQueryItem] = [],
       betaHeaderField: String? = nil,
       extraHeaders: [String: String]? = nil)
-      throws -> URLRequest
+    throws -> HTTPClientRequest
    {
-      var request = URLRequest(url: urlComponents(queryItems: queryItems).url!)
-      request.addValue("application/json", forHTTPHeaderField: "Content-Type")
-      request.addValue(apiKey.value, forHTTPHeaderField: apiKey.headerField)
+      var request = HTTPClientRequest(url: urlComponents(queryItems: queryItems).url!.absoluteString)
+      request.headers.add(name: "Content-Type", value: "application/json")
+      request.headers.add(name: apiKey.headerField, value: apiKey.value)
       if let organizationID {
-         request.addValue(organizationID, forHTTPHeaderField: "OpenAI-Organization")
+         request.headers.add(name: "OpenAI-Organization", value: organizationID)
       }
       if let betaHeaderField {
-         request.addValue(betaHeaderField, forHTTPHeaderField: "OpenAI-Beta")
+         request.headers.add(name: "OpenAI-Beta", value: betaHeaderField)
       }
       if let extraHeaders {
          for header in extraHeaders {
-            request.addValue(header.value, forHTTPHeaderField: header.key)
+            request.headers.add(name: header.key, value: header.value)
          }
       }
-      request.httpMethod = method.rawValue
+       request.method = .init(rawValue: method.rawValue)
       if let params {
-         request.httpBody = try JSONEncoder().encode(params)
+         let bodyData = try JSONEncoder().encode(params)
+         request.body = .bytes(bodyData, length: .known(Int64(bodyData.count)))
       }
       return request
    }
@@ -76,17 +79,18 @@ extension Endpoint {
       method: HTTPMethod,
       params: MultipartFormDataParameters,
       queryItems: [URLQueryItem] = [])
-      throws -> URLRequest
+      throws -> HTTPClientRequest
    {
-      var request = URLRequest(url: urlComponents(queryItems: queryItems).url!)
-      request.httpMethod = method.rawValue
+      var request = HTTPClientRequest(url: urlComponents(queryItems: queryItems).url!.absoluteString)
+      request.method = .init(rawValue: method.rawValue)
       let boundary = UUID().uuidString
-      request.addValue(apiKey.value, forHTTPHeaderField: apiKey.headerField)
+       request.headers.add(name: apiKey.headerField, value: apiKey.value)
       if let organizationID {
-         request.addValue(organizationID, forHTTPHeaderField: "OpenAI-Organization")
+          request.headers.add(name: "OpenAI-Organization", value: organizationID)
       }
-      request.addValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-      request.httpBody = params.encode(boundary: boundary)
+      request.headers.add(name: "Content-Type", value: "multipart/form-data; boundary=\(boundary)")
+      let bodyData = params.encode(boundary: boundary)
+      request.body = .bytes(bodyData, length: .known(Int64(bodyData.count)))
       return request
    }
 }

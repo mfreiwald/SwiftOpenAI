@@ -5,11 +5,15 @@
 //  Created by James Rochabrun on 6/30/24.
 //
 
+import AsyncHTTPClient
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 struct LocalModelService: OpenAIService {
    
-   let session: URLSession
+   let client: HTTPClient
    let decoder: JSONDecoder
    /// [authentication](https://platform.openai.com/docs/api-reference/authentication)
    private let apiKey: Authorization
@@ -19,11 +23,11 @@ struct LocalModelService: OpenAIService {
    public init(
       apiKey: Authorization = .apiKey(""),
       baseURL: String,
-      configuration: URLSessionConfiguration = .default,
+      httpClient: HTTPClient = .shared,
       decoder: JSONDecoder = .init(),
       debugEnabled: Bool)
    {
-      self.session = URLSession(configuration: configuration)
+      self.client = httpClient
       self.decoder = decoder
       self.apiKey = apiKey
       LocalModelAPI.overrideBaseURL = baseURL

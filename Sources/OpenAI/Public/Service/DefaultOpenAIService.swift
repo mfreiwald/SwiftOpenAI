@@ -5,11 +5,12 @@
 //  Created by James Rochabrun on 10/17/23.
 //
 
+import AsyncHTTPClient
 import Foundation
 
 struct DefaultOpenAIService: OpenAIService {
    
-   let session: URLSession
+   let client: HTTPClient
    let decoder: JSONDecoder
    
    private let sessionID = UUID().uuidString
@@ -26,11 +27,11 @@ struct DefaultOpenAIService: OpenAIService {
       apiKey: String,
       organizationID: String? = nil,
       baseURL: String? = nil,
-      configuration: URLSessionConfiguration = .default,
+      httpClient: HTTPClient = .shared,
       decoder: JSONDecoder = .init(),
       debugEnabled: Bool)
    {
-      self.session = URLSession(configuration: configuration)
+      self.client = httpClient
       self.decoder = decoder
       self.apiKey = .bearer(apiKey)
       self.organizationID = organizationID

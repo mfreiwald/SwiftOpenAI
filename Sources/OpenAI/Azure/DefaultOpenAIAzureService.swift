@@ -5,17 +5,21 @@
 //  Created by James Rochabrun on 1/23/24.
 //
 
+import AsyncHTTPClient
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 final public class DefaultOpenAIAzureService: OpenAIService {
 
    public init(
       azureConfiguration: AzureOpenAIConfiguration,
-      urlSessionConfiguration: URLSessionConfiguration = .default,
+      httpClient: HTTPClient = .shared,
       decoder: JSONDecoder = .init(),
       debugEnabled: Bool)
    {
-      session = URLSession(configuration: urlSessionConfiguration)
+      client = httpClient
       self.decoder = decoder
       AzureOpenAIAPI.azureOpenAIResource = azureConfiguration.resourceName
       apiKey = azureConfiguration.openAIAPIKey
@@ -24,7 +28,7 @@ final public class DefaultOpenAIAzureService: OpenAIService {
       self.debugEnabled = debugEnabled
    }
    
-   public let session: URLSession
+   public let client: HTTPClient
    public let decoder: JSONDecoder
    private let apiKey: Authorization
    private let initialQueryItems: [URLQueryItem]

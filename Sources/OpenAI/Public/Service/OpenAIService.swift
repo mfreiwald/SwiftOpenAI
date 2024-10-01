@@ -5,7 +5,11 @@
 //  Created by James Rochabrun on 10/17/23.
 //
 
+import AsyncHTTPClient
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 // MARK: Error
 
@@ -69,7 +73,7 @@ public protocol OpenAIService {
    ///
    /// This session is configured according to the needs of OpenAI's API,
    /// and it's used for tasks like sending and receiving data.
-   var session: URLSession { get }
+   var client: HTTPClient { get }
    /// The `JSONDecoder` instance used for decoding JSON responses.
    ///
    /// This decoder is used to parse the JSON responses returned by the API
@@ -938,33 +942,31 @@ extension OpenAIService {
    ///
    /// This method is used exclusively for retrieving the content of uploaded files.
    ///
-   /// - Parameter request: The `URLRequest` describing the API request to fetch the file.
+   /// - Parameter request: The `HTTPClientRequest` describing the API request to fetch the file.
    /// - Throws: An error if the request fails.
    /// - Returns: A dictionary array representing the file contents.
    public func fetchContentsOfFile(
-      request: URLRequest)
+    request: HTTPClientRequest)
       async throws -> [[String: Any]]
    {
-      printCurlCommand(request)
-      let (data, response) = try await session.data(for: request)
-      guard let httpResponse = response as? HTTPURLResponse else {
-         throw APIError.requestFailed(description: "invalid response unable to get a valid HTTPURLResponse")
-      }
-      printHTTPURLResponse(httpResponse)
-      guard httpResponse.statusCode == 200 else {
-         var errorMessage = "status code \(httpResponse.statusCode)"
+      try? await printCurlCommand(request)
+      let response = try await client.execute(request, timeout: .seconds(60))
+      let data = try await response.body.collect(upTo: 1024*1024*10)
+      printHTTPURLResponse(response)
+       guard response.status.code == 200 else {
+         var errorMessage = "status code \(response.status.code)"
          do {
             let error = try decoder.decode(OpenAIErrorResponse.self, from: data)
             errorMessage += " \(error.error.message ?? "NO ERROR MESSAGE PROVIDED")"
          } catch {
             // If decoding fails, proceed with a general error message
-            errorMessage = "status code \(httpResponse.statusCode)"
+            errorMessage = "status code \(response.status.code)"
          }
          throw APIError.responseUnsuccessful(description: errorMessage,
-                                             statusCode: httpResponse.statusCode)
+                                             statusCode: Int(response.status.code))
       }
       var content: [[String: Any]] = []
-      if let jsonString = String(data: data, encoding: .utf8) {
+      if let jsonString = String(data: Data(buffer: data), encoding: .utf8) {
          let lines = jsonString.split(separator: "\n")
          for line in lines {
             #if DEBUG
@@ -983,34 +985,31 @@ extension OpenAIService {
    ///
    /// This method is used exclusively for handling audio data responses.
    ///
-   /// - Parameter request: The `URLRequest` describing the API request to fetch the file.
+   /// - Parameter request: The `HTTPClientRequest` describing the API request to fetch the file.
    /// - Throws: An error if the request fails.
    /// - Returns: The audio Data
    public func fetchAudio(
-      with request: URLRequest)
+      with request: HTTPClientRequest)
       async throws -> Data
    {
-      printCurlCommand(request)
-      let (data, response) = try await session.data(for: request)
-      
-      guard let httpResponse = response as? HTTPURLResponse else {
-         throw APIError.requestFailed(description: "Invalid response: unable to get a valid HTTPURLResponse")
-      }
-      printHTTPURLResponse(httpResponse)
-      guard httpResponse.statusCode == 200 else {
-         var errorMessage = "Status code \(httpResponse.statusCode)"
+      try? await printCurlCommand(request)
+      let response = try await client.execute(request, timeout: .seconds(60))
+       let data = Data(buffer: try await response.body.collect(upTo: 1024*1024*10))
+      printHTTPURLResponse(response)
+      guard response.status.code == 200 else {
+         var errorMessage = "Status code \(response.status.code)"
          do {
             let errorResponse = try decoder.decode(OpenAIErrorResponse.self, from: data)
             errorMessage += " \(errorResponse.error.message ?? "NO ERROR MESSAGE PROVIDED")"
          } catch {
-            if let errorString = String(data: data, encoding: .utf8), !errorString.isEmpty {
+             if let errorString = String(data: data, encoding: .utf8), !errorString.isEmpty {
                errorMessage += " - \(errorString)"
             } else {
                errorMessage += " - No error message provided"
             }
          }
          throw APIError.responseUnsuccessful(description: errorMessage,
-                                             statusCode: httpResponse.statusCode)
+                                             statusCode: Int(response.status.code))
       }
       return data
    }
@@ -1020,36 +1019,35 @@ extension OpenAIService {
    /// - Parameters:
    ///   - debugEnabled: If true the service will print events on DEBUG builds.
    ///   - type: The `Decodable` type that the response should be decoded to.
-   ///   - request: The `URLRequest` describing the API request.
+   ///   - request: The `HTTPClientRequest` describing the API request.
    /// - Throws: An error if the request fails or if decoding fails.
    /// - Returns: A value of the specified decodable type.
    public func fetch<T: Decodable>(
       debugEnabled: Bool,
       type: T.Type,
-      with request: URLRequest)
+      with request: HTTPClientRequest)
       async throws -> T
    {
       if debugEnabled {
-         printCurlCommand(request)
+         try? await printCurlCommand(request)
       }
-      let (data, response) = try await session.data(for: request)
-      guard let httpResponse = response as? HTTPURLResponse else {
-         throw APIError.requestFailed(description: "invalid response unable to get a valid HTTPURLResponse")
-      }
+      let response = try await client.execute(request, timeout: .seconds(60))
+      let data = Data(buffer: try await response.body.collect(upTo: 1024*1024*10))
+
       if debugEnabled {
-         printHTTPURLResponse(httpResponse)
+         printHTTPURLResponse(response)
       }
-      guard httpResponse.statusCode == 200 else {
-         var errorMessage = "status code \(httpResponse.statusCode)"
+       guard response.status.code == 200 else {
+         var errorMessage = "status code \(response.status.code)"
          do {
             let error = try decoder.decode(OpenAIErrorResponse.self, from: data)
             errorMessage += " \(error.error.message ?? "NO ERROR MESSAGE PROVIDED")"
          } catch {
             // If decoding fails, proceed with a general error message
-            errorMessage = "status code \(httpResponse.statusCode)"
+            errorMessage = "status code \(response.status.code)"
          }
          throw APIError.responseUnsuccessful(description: errorMessage,
-                                             statusCode: httpResponse.statusCode)
+                                             statusCode: Int(response.status.code))
       }
       #if DEBUG
       if debugEnabled {
@@ -1085,48 +1083,43 @@ extension OpenAIService {
    /// - Parameters:
    ///   - debugEnabled: If true the service will print events on DEBUG builds.
    ///   - type: The `Decodable` type that each streamed response should be decoded to.
-   ///   - request: The `URLRequest` describing the API request.
+   ///   - request: The `HTTPClientRequest` describing the API request.
    /// - Throws: An error if the request fails or if decoding fails.
    /// - Returns: An asynchronous throwing stream of the specified decodable type.
    public func fetchStream<T: Decodable>(
       debugEnabled: Bool,
       type: T.Type,
-      with request: URLRequest)
+      with request: HTTPClientRequest)
       async throws -> AsyncThrowingStream<T, Error>
    {
       if debugEnabled {
-         printCurlCommand(request)
+         try? await printCurlCommand(request)
       }
 
-      let (data, response) = try await session.bytes(
-         for: request,
-         delegate: session.delegate as? URLSessionTaskDelegate
-      )
-      guard let httpResponse = response as? HTTPURLResponse else {
-         throw APIError.requestFailed(description: "invalid response unable to get a valid HTTPURLResponse")
-      }
+      let response = try await client.execute(request, timeout: .seconds(60))
+
       if debugEnabled {
-         printHTTPURLResponse(httpResponse)
+         printHTTPURLResponse(response)
       }
-      guard httpResponse.statusCode == 200 else {
-         var errorMessage = "status code \(httpResponse.statusCode)"
+      guard response.status.code == 200 else {
+         var errorMessage = "status code \(response.status.code)"
          do {
-            let data = try await data.reduce(into: Data()) { data, byte in
-               data.append(byte)
-            }
+            let data = try await response.body.collect(upTo: 1024*1024*10)
             let error = try decoder.decode(OpenAIErrorResponse.self, from: data)
             errorMessage += " \(error.error.message ?? "NO ERROR MESSAGE PROVIDED")"
          } catch {
             // If decoding fails, proceed with a general error message
-            errorMessage = "status code \(httpResponse.statusCode)"
+            errorMessage = "status code \(response.status.code)"
          }
          throw APIError.responseUnsuccessful(description: errorMessage,
-                                             statusCode: httpResponse.statusCode)
+                                             statusCode: Int(response.status.code))
       }
       return AsyncThrowingStream { continuation in
          let task = Task {
             do {
-               for try await line in data.lines {
+               for try await line in response.body {
+                  let data = Data(buffer: line)
+                  let line = String(decoding: data, as: UTF8.self)
                   if line.hasPrefix("data:") && line != "data: [DONE]",
                      let data = line.dropFirst(5).data(using: .utf8) {
                      #if DEBUG
@@ -1184,39 +1177,35 @@ extension OpenAIService {
    }
    
    public func fetchAssistantStreamEvents(
-      with request: URLRequest,
+      with request: HTTPClientRequest,
       debugEnabled: Bool)
       async throws -> AsyncThrowingStream<AssistantStreamEvent, Error>
    {
-      printCurlCommand(request)
-      
-      let (data, response) = try await session.bytes(
-         for: request,
-         delegate: session.delegate as? URLSessionTaskDelegate
-      )
-      guard let httpResponse = response as? HTTPURLResponse else {
-         throw APIError.requestFailed(description: "invalid response unable to get a valid HTTPURLResponse")
+      if debugEnabled {
+         try? await printCurlCommand(request)
       }
-      printHTTPURLResponse(httpResponse)
-      guard httpResponse.statusCode == 200 else {
-         var errorMessage = "status code \(httpResponse.statusCode)"
+      let response = try await client.execute(request, timeout: .seconds(60))
+
+      printHTTPURLResponse(response)
+      guard response.status.code == 200 else {
+         var errorMessage = "status code \(response.status.code)"
          do {
-            let data = try await data.reduce(into: Data()) { data, byte in
-               data.append(byte)
-            }
-            let error = try decoder.decode(OpenAIErrorResponse.self, from: data)
+             let data = try await response.body.collect(upTo: 1024*1024*10)
+             let error = try decoder.decode(OpenAIErrorResponse.self, from: data)
             errorMessage += " \(error.error.message ?? "NO ERROR MESSAGE PROVIDED")"
          } catch {
             // If decoding fails, proceed with a general error message
-            errorMessage = "status code \(httpResponse.statusCode)"
+            errorMessage = "status code \(response.status.code)"
          }
          throw APIError.responseUnsuccessful(description: errorMessage,
-                                             statusCode: httpResponse.statusCode)
+                                             statusCode: Int(response.status.code))
       }
       return AsyncThrowingStream { continuation in
          let task = Task {
             do {
-               for try await line in data.lines {
+                for try await line in response.body {
+                  let data = Data(buffer: line)
+                  let line = String(decoding: data, as: UTF8.self)
                   if line.hasPrefix("data:") && line != "data: [DONE]",
                      let data = line.dropFirst(5).data(using: .utf8) {
                      do {
@@ -1343,30 +1332,25 @@ extension OpenAIService {
    }
    
    private func printCurlCommand(
-      _ request: URLRequest)
+      _ request: HTTPClientRequest) async throws
    {
-      guard let url = request.url, let httpMethod = request.httpMethod else {
-         debugPrint("Invalid URL or HTTP method.")
-         return
-      }
-      
-      var baseCommand = "curl \(url.absoluteString)"
-      
+      let httpMethod = request.method.rawValue
+      var baseCommand = "curl \(request.url)"
+
       // Add method if not GET
       if httpMethod != "GET" {
          baseCommand += " -X \(httpMethod)"
       }
       
       // Add headers if any, masking the Authorization token
-      if let headers = request.allHTTPHeaderFields {
-         for (header, value) in headers {
-            let maskedValue = header.lowercased() == "authorization" ? maskAuthorizationToken(value) : value
-            baseCommand += " \\\n-H \"\(header): \(maskedValue)\""
-         }
-      }
-      
+      let headers = request.headers
+       for (header, value) in headers {
+           let maskedValue = header.lowercased() == "authorization" ? maskAuthorizationToken(value) : value
+           baseCommand += " \\\n-H \"\(header): \(maskedValue)\""
+       }
+
       // Add body if present
-      if let httpBody = request.httpBody, let bodyString = prettyPrintJSON(httpBody) {
+       if let httpBody = request.body, let bodyString = prettyPrintJSON(Data(buffer: try await httpBody.collect(upTo: 1024*1024*10))) {
          // The body string is already pretty printed and should be enclosed in single quotes
          baseCommand += " \\\n-d '\(bodyString)'"
       }
@@ -1389,24 +1373,24 @@ extension OpenAIService {
    }
    
    private func printHTTPURLResponse(
-      _ response: HTTPURLResponse,
+      _ response: HTTPClientResponse,
       data: Data? = nil)
    {
-   #if DEBUG
-      print("\n- - - - - - - - - - INCOMING RESPONSE - - - - - - - - - -\n")
-      print("URL: \(response.url?.absoluteString ?? "No URL")")
-      print("Status Code: \(response.statusCode)")
-      print("Headers: \(response.allHeaderFields)")
-      if let mimeType = response.mimeType {
-         print("MIME Type: \(mimeType)")
-      }
-      if let data = data, response.mimeType == "application/json" {
-         print("Body: \(prettyPrintJSON(data))")
-      } else if let data = data, let bodyString = String(data: data, encoding: .utf8) {
-         print("Body: \(bodyString)")
-      }
-      print("\n- - - - - - - - - - - - - - - - - - - - - - - - - - - -\n")
-   #endif
+//   #if DEBUG
+//      print("\n- - - - - - - - - - INCOMING RESPONSE - - - - - - - - - -\n")
+//      print("URL: \(response.url?.absoluteString ?? "No URL")")
+//      print("Status Code: \(response.status.code)")
+//      print("Headers: \(response.headers)")
+//      if let mimeType = response.mimeType {
+//         print("MIME Type: \(mimeType)")
+//      }
+//      if let data = data, response.mimeType == "application/json" {
+//         print("Body: \(prettyPrintJSON(data))")
+//      } else if let data = data, let bodyString = String(data: data, encoding: .utf8) {
+//         print("Body: \(bodyString)")
+//      }
+//      print("\n- - - - - - - - - - - - - - - - - - - - - - - - - - - -\n")
+//   #endif
    }
    
    private func maskAuthorizationToken(_ token: String) -> String {
